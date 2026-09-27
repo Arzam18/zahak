@@ -1,5 +1,6 @@
-//go:build !amd64
+//go:build !amd64 && (!arm64 || !cgo)
 // +build !amd64
+// +build !arm64 !cgo
 
 package engine
 
