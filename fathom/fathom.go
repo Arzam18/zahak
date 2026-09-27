@@ -3,7 +3,8 @@
 
 package fathom
 
-// #cgo CFLAGS: -O3 -std=gnu11 -w -mavx
+// #cgo CFLAGS: -O3 -std=gnu11 -w
+// #cgo amd64 CFLAGS: -mavx
 // #include "tbprobe.h"
 // #include <stdlib.h>
 import "C"
