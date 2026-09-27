@@ -1,0 +1,131 @@
+name: Build Zahak for Android ARM64 NEON
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+    paths:
+      - 'engine/**'
+      - 'clib/**'
+      - 'netgen/**'
+      - 'zahak/**'
+      - 'search/**'
+      - 'uci/**'
+      - 'perft/**'
+      - 'book/**'
+      - 'strength/**'
+      - 'fathom/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'default.nn'
+      - 'skills/**'
+      - '.github/workflows/android.yml'
+
+jobs:
+  build-android:
+    name: Android ARM64 NEON
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: true
+
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            if [ -n "${ANDROID_SDK_ROOT:-}" ]; then
+              export ANDROID_HOME="$ANDROID_SDK_ROOT"
+            else
+              export ANDROID_HOME="$HOME/android-sdk"
+            fi
+          fi
+
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -n 1 || true)"
+
+          if [ -z "$SDKMANAGER" ] && command -v sdkmanager >/dev/null 2>&1; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found"
+            exit 1
+          fi
+
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-24" "ndk;27.2.12479018"
+
+      - name: Generate embedded NNUE sources
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f default.nn
+          CGO_ENABLED=0 go run -ldflags "-X 'main.netPath=default.nn' -X 'main.Version=android-arm64-neon'" netgen/nn.go
+
+      - name: Build Android ARM64 NEON
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export PATH="$TOOLCHAIN:$PATH"
+
+          export GOOS=android
+          export GOARCH=arm64
+          export CGO_ENABLED=1
+          export CC="$TOOLCHAIN/aarch64-linux-android24-clang"
+
+          test -x "$CC"
+
+          go build \
+            -trimpath \
+            -gcflags="-B" \
+            -ldflags="-s -w" \
+            -o Zahak-android-arm64 \
+            ./zahak
+
+          file Zahak-android-arm64
+          readelf -h Zahak-android-arm64 | grep -E 'Class:|Machine:|Type:'
+
+      - name: Verify generated source and Android ELF
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          grep -R "zahak_update_hidden" -n engine/nnue_instructions_arm64.go engine/nnue_instructions_arm64.c
+          grep -R "arm_neon.h" -n engine/nnue_instructions_arm64.c
+
+          file Zahak-android-arm64
+          readelf -h Zahak-android-arm64
+          readelf -d Zahak-android-arm64 || true
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          tar -czf Zahak-android-arm64-neon.tar.gz Zahak-android-arm64
+
+      - name: Upload Android ARM64 NEON binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zahak-android-arm64-neon
+          path: |
+            Zahak-android-arm64
+            Zahak-android-arm64-neon.tar.gz
+          if-no-files-found: error
