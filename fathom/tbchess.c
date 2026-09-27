@@ -27,6 +27,34 @@ SOFTWARE.
 #include <stdlib.h>
 #include "assert.h"
 
+/*
+ * tbchess.c is normally included from tbprobe.c, where Fathom defines
+ * these bitboard helpers first.  cgo also compiles .c files directly,
+ * however, so tbchess.c must be self-contained for Clang/Android.
+ * Keep these definitions conditional so the tbprobe.c implementations
+ * are still used when this file is included there.
+ */
+#ifndef popcount
+static inline int zahak_tb_popcount(uint64_t x) {
+    return (int)__builtin_popcountll(x);
+}
+#define popcount(x) zahak_tb_popcount(x)
+#endif
+
+#ifndef lsb
+static inline unsigned zahak_tb_lsb(uint64_t x) {
+    return (unsigned)__builtin_ctzll(x);
+}
+#define lsb(x) zahak_tb_lsb(x)
+#endif
+
+#ifndef poplsb
+static inline uint64_t zahak_tb_poplsb(uint64_t x) {
+    return x & (x - 1);
+}
+#define poplsb(x) zahak_tb_poplsb(x)
+#endif
+
 #define TB_PAWN 1
 #define TB_KNIGHT 2
 #define TB_BISHOP 3
